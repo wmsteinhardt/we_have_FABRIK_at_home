@@ -1,3 +1,5 @@
+extends Skeleton3D
+
 var left_arm_indices = []
 # we include shoulder through index - we will need shoulder and index to get lengths of bones we care about
 var left_arm_names = ['DEF-shoulder.L','DEF-upper_arm.L','DEF-upper_arm.L.001','DEF-forearm.L','DEF-forearm.L.001','DEF-hand.L','DEF-f_index.01.L']
