@@ -2,12 +2,12 @@ extends Skeleton3D
 
 var left_arm_indices = []
 # we include shoulder through index - we will need shoulder and index to get lengths of bones we care about
-var left_arm_names = ['DEF-shoulder.L','DEF-upper_arm.L','DEF-upper_arm.L.001','DEF-forearm.L','DEF-forearm.L.001','DEF-hand.L','DEF-f_index.01.L']
+var left_arm_names = ['DEF-upper_arm.L','DEF-upper_arm.L.001','DEF-forearm.L','DEF-forearm.L.001','DEF-hand.L','DEF-f_index.01.L']
 var left_arm_lengths = []
 
 var right_arm_indices = []
 # we include shoulder through index - we will need shoulder and index to get lengths of bones we care about
-var right_arm_names = ['DEF-shoulder.R','DEF-upper_arm.R','DEF-upper_arm.R.001','DEF-forearm.R','DEF-forearm.R.001','DEF-hand.R','DEF-f_index.01.R']
+var right_arm_names = ['DEF-upper_arm.R','DEF-upper_arm.R.001','DEF-forearm.R','DEF-forearm.R.001','DEF-hand.R','DEF-f_index.01.R']
 var right_arm_lengths = []
 var counter = 0
 
@@ -48,34 +48,37 @@ func _ready():
 	print(global_transform.origin)
 	for i in range(len(left_arm_indices)):
 		var l = get_bone_global_pose(left_arm_indices[i])
-		var r = get_bone_global_pose(right_arm_indices[i])
 		print(l.basis)
-		print(r.basis)
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _physics_process(delta):
 	#point_bone_at_global_target(left_arm_indices[1],left_arm_indices[2],target.global_transform.origin)
-	if counter < 1:
-		FABRIK(left_arm_indices,get_tree().get_current_scene().get_node('Target'))
-	counter += 1
-	
 
-func point_bone_at_global_target(bone_index,child_index,target):
+	FABRIK(left_arm_indices,get_tree().get_current_scene().get_node('Target'))
+	if Input.is_action_just_released("ui_end"):
+		FABRIK(left_arm_indices,get_tree().get_current_scene().get_node('Target'))
+	if Input.is_action_just_released("ui_home"):
+		clear_bones_global_pose_override()
+func point_bone_at_global_target(bone_index,child_index,global_target):
 	var t = get_bone_global_pose(bone_index)
-	var axis_and_rot = get_axis_and_angle_to_point_bone_at_global_target(bone_index,child_index,target)
+	var axis_and_rot = get_axis_and_angle_to_point_bone_at_global_target(bone_index,child_index,global_target)
 	t.basis = t.basis.rotated(axis_and_rot[0],axis_and_rot[1]) 
-	set_bone_global_pose_override(bone_index,t,1.0,true)
+	if axis_and_rot[1] > 0.01:
+		set_bone_global_pose_override(bone_index,t,1.0,true)
+	else:
+		print('Rotation angle was only ',axis_and_rot[1])
 	
-func get_axis_and_angle_to_point_bone_at_global_target(bone_index,child_index,target):
+func get_axis_and_angle_to_point_bone_at_global_target(bone_index,child_index,global_target):
 	# Vector describing current direction of the bone
 	var current_vec = to_global(get_bone_global_pose(child_index).origin)-to_global(get_bone_global_pose(bone_index).origin)
 	# Vector pointing from bone to the target position
-	var targ_vec = (target - to_global(get_bone_global_pose(bone_index).origin))
+	var targ_vec = (global_target - to_global(get_bone_global_pose(bone_index).origin))
 	# Normalize both vectors
 	targ_vec = targ_vec.normalized()
 	current_vec = current_vec.normalized()
 	# Calculate the angle (independent of coordinate frame!)
 	var angle_to_rot = current_vec.angle_to(targ_vec)
+	print('angle to rotate: ',angle_to_rot)
 	# Calculate the rotation axis
 	var rotation_axis = current_vec.cross(targ_vec)
 	rotation_axis = rotation_axis.normalized()
@@ -92,14 +95,14 @@ func interpret_bone_chain(bone_idx_array): # Suitable for Rigify-style bone nome
 		elif '01' in get_bone_name(bone_idx_array[i+1]): # if next bone is 01, add its length to parents for FABRIK
 			mod_idx.append(bone_idx_array[i])
 			if i+2 == len(bone_idx_array): # if bone '01' is the last bone of chain
-				bone_lengths.append((get_bone_global_pose(bone_idx_array[i]).origin-get_bone_global_pose(bone_idx_array[i+1]).origin).length())
+				bone_lengths.append((get_bone_global_rest(bone_idx_array[i]).origin-get_bone_global_rest(bone_idx_array[i+1]).origin).length())
 			else: # 
-				var bone_1_length = (get_bone_global_pose(bone_idx_array[i]).origin-get_bone_global_pose(bone_idx_array[i+1]).origin).length()
-				var bone_2_length = (get_bone_global_pose(bone_idx_array[i+1]).origin-get_bone_global_pose(bone_idx_array[i+2]).origin).length()
+				var bone_1_length = (get_bone_global_rest(bone_idx_array[i]).origin-get_bone_global_rest(bone_idx_array[i+1]).origin).length()
+				var bone_2_length = (get_bone_global_rest(bone_idx_array[i+1]).origin-get_bone_global_rest(bone_idx_array[i+2]).origin).length()
 				bone_lengths.append(bone_1_length+bone_2_length)
 		else: # all other bones can be transformed
 			mod_idx.append(bone_idx_array[i])
-			bone_lengths.append((get_bone_global_pose(bone_idx_array[i]).origin-get_bone_global_pose(bone_idx_array[i+1]).origin).length())
+			bone_lengths.append((get_bone_global_rest(bone_idx_array[i]).origin-get_bone_global_rest(bone_idx_array[i+1]).origin).length())
 	#mod_idx.append(bone_idx_array[-1]) # keep the last 
 	var total_length = 0
 	for each in bone_lengths:
@@ -147,41 +150,65 @@ func forward_pass(bone_positions,bone_lengths,target_position,first_bone_pos):
 		current_target = new_bone_pos
 	return new_bone_positions
 
-func get_positions_to_aim_chain_at_target(bone_positions,bone_lengths,target_position):
-	var target_direction = (target_position - bone_positions[0]).normalized()
-	var new_bone_positions = [bone_positions[0]]
+func get_positions_to_aim_chain_at_global_target(bone_positions,bone_lengths,target_position):
+	var target_direction = (to_local(target_position) - bone_positions[0]).normalized() # direction is same for all
+	var new_bone_positions = [bone_positions[0]] # start with position of anchor bone, which does not move
 	for i in range(1,len(bone_positions)):
-		new_bone_positions.append(bone_positions[i-1]+target_direction*bone_lengths[i])
+		# append each subsequent position as the previous + target vector*bone length
+		new_bone_positions.append(new_bone_positions[i-1]+target_direction*bone_lengths[i])
+	#print('last bone position old/new: ',bone_positions[-1],new_bone_positions[-1])
+	
 	return new_bone_positions
 
 func apply_transforms(bone_idx_array,bone_positions,terminal_bone_idx,global_target_position):
 	var global_positions = []
-	bone_idx_array.append(terminal_bone_idx)
-	for each in bone_positions:
+	bone_idx_array.append(terminal_bone_idx) # this guarantees that the last bone identified in the chain is also pointed.
+	for each in bone_positions: # for each of the bone positions, formerly in the skeleton frame, get global position
 		global_positions.append(to_global(each))
 	for i in range(len(bone_idx_array)-2):
-		point_bone_at_global_target(bone_idx_array[i],bone_idx_array[i+1],global_positions[i+1])
+		# for each bone in in the array, point it at the location specified for its child
+		print(get_bone_name(bone_idx_array[i]),', ',get_bone_name(bone_idx_array[i+1]))
+		point_bone_at_global_target(bone_idx_array[i],bone_idx_array[i+1],global_positions[i+1])#global_positions[i+1])
+	# point the hand or last bone at the actual target itself!
 	point_bone_at_global_target(bone_idx_array[-2],bone_idx_array[-1],global_target_position)
 
 
 func FABRIK(bone_idx_array,target_node,threshold=0.1,max_passes = 15):
+	clear_bones_global_pose_override()
 	# Get the target node position in the skeleton frame
-	var target_position = (global_transform.affine_inverse()*target_node.global_transform).origin
+	#var target_position = (global_transform.affine_inverse()*target_node.global_transform).origin
+	var target_position = to_local(target_node.global_transform.origin)
 	var modIdx_lengths_totalLength = interpret_bone_chain(bone_idx_array)
+	print(modIdx_lengths_totalLength)
 	var mod_idx_array = modIdx_lengths_totalLength[0] # the bones to be moved
+	#for each in mod_idx_array:
+		#print(get_bone_name(each))
 	var bone_lengths = modIdx_lengths_totalLength[1] # the interpreted lengths
 	var total_length = modIdx_lengths_totalLength[2] # the total length of the limb
-	var current_bone_positions = get_bone_array_global_positions(mod_idx_array)
-	var new_bone_positions = current_bone_positions # for starters!
+	var current_bone_positions = get_bone_array_global_positions(mod_idx_array) # in skeleton frame
+	print('current: ',current_bone_positions)
+	var new_bone_positions = current_bone_positions.duplicate(true) # for starters!
 	var first_bone_position = get_bone_global_pose(mod_idx_array[0]).origin
 	if total_length < (target_position - current_bone_positions[0]).length():
 		print('out of reach!')
-		new_bone_positions = get_positions_to_aim_chain_at_target(current_bone_positions,bone_lengths,target_position)
+		# new_bone_positions are always in skeleton frame 
+		new_bone_positions = get_positions_to_aim_chain_at_global_target(current_bone_positions,bone_lengths,to_global(target_position))
 	else: # execute FABRIK if final bone in chain not closer than threshold
+		print('FABRIK TIME!')
 		var passes = 0
-		while (new_bone_positions[-1] - target_position).length() > threshold or passes < max_passes:
+		while (new_bone_positions[-1] - target_position).length() > threshold and passes < max_passes:
 			new_bone_positions = backward_pass(new_bone_positions,bone_lengths,target_position)
 			new_bone_positions = forward_pass(new_bone_positions,bone_lengths,target_position,first_bone_position)
 			passes += 1
-	apply_transforms(mod_idx_array,new_bone_positions,bone_idx_array[-1],target_node.global_transform.origin)
+	var already_set = true
+	for i in range(len(new_bone_positions)):
+		if not new_bone_positions[i].is_equal_approx(current_bone_positions[i]):
+			already_set = false
+	if not already_set:
+		print('new: ',new_bone_positions)
+							#bone_idx_array,bone_positions,terminal_bone_idx,global_target_position
+		apply_transforms(mod_idx_array,new_bone_positions,bone_idx_array[-1],target_node.global_transform.origin)
+	
+	# DIRECTION is target - current bone position
+	# NEW position is -DIRECTION.normalized() * current bone length + target
 	
