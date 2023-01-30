@@ -15,7 +15,6 @@ var counter = 0
 var set = false
 # Called when the node enters the scene tree for the first time.
 @onready var target = get_owner().get_node('Target')
-@onready var BAs = [$BA0,$BA1,$BA2,$BA3,$BA4,$BA5,$BA6]
 
 # Bone/Skeleton notes
 # to_global(get_bone_global_pose(bone index)) will yield the actual global transform of the bone.
