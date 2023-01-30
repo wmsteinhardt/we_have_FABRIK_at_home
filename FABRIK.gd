@@ -163,7 +163,7 @@ func apply_transforms(bone_idx_array,bone_positions,terminal_bone_idx,global_tar
 	point_bone_at_global_target(bone_idx_array[-2],bone_idx_array[-1],global_target_position)
 
 
-func FABRIK(bone_idx_array,target_node,threshold=0.1,max_passes = 10,clear_override=false):
+func FABRIK(bone_idx_array,target_node,threshold=0.01,max_passes = 10,clear_override=false):
 	if clear_override:
 		clear_bones_global_pose_override()
 	# a better version of this won't depend on the previous line - should change to take existing
