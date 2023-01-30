@@ -22,11 +22,6 @@ var set = false
 # 
 # Overall transform of a bone W.R.T. Skeleton is rest pose / custom pose / pose
 # "Global pose" is overall transform of the pose W.R.T. Skeleton
-#
-# Seems like when modifying bone poses need to:
-# Determine local pose modification
-# Conver to to global pose
-# set_bone_global_pose_override(int bone idx, Transform3D pose, float amount, persistent = false)
 
 # To convert a world transform from a Node3D to a global bone pose, multiply Transform3D.affine_inverse 
 # origin for my skeleton is between the feet - as assigned in Blender
@@ -43,22 +38,20 @@ func _ready():
 		right_arm_indices.append(find_bone(each))
 	print('Interpret chain results: ')
 	print(interpret_bone_chain(right_arm_indices))
+	print(interpret_bone_chain(left_arm_indices))
 	#for i in range(1,len(left_arm_indices)):
-	print(left_arm_indices)
-	print(global_transform.origin)
-	for i in range(len(left_arm_indices)):
-		var l = get_bone_global_pose(left_arm_indices[i])
-		print(l.basis)
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _physics_process(delta):
 	#point_bone_at_global_target(left_arm_indices[1],left_arm_indices[2],target.global_transform.origin)
-
-	FABRIK(left_arm_indices,get_tree().get_current_scene().get_node('Target'))
+	FABRIK(right_arm_indices,get_tree().get_current_scene().get_node('Target'),0.001,2,true)
+	FABRIK(left_arm_indices,get_tree().get_current_scene().get_node('Target'),0.001,2,false)
 	if Input.is_action_just_released("ui_end"):
 		FABRIK(left_arm_indices,get_tree().get_current_scene().get_node('Target'))
+		FABRIK(right_arm_indices,get_tree().get_current_scene().get_node('Target'))
 	if Input.is_action_just_released("ui_home"):
 		clear_bones_global_pose_override()
+		
 func point_bone_at_global_target(bone_index,child_index,global_target):
 	var t = get_bone_global_pose(bone_index)
 	var axis_and_rot = get_axis_and_angle_to_point_bone_at_global_target(bone_index,child_index,global_target)
@@ -78,11 +71,9 @@ func get_axis_and_angle_to_point_bone_at_global_target(bone_index,child_index,gl
 	current_vec = current_vec.normalized()
 	# Calculate the angle (independent of coordinate frame!)
 	var angle_to_rot = current_vec.angle_to(targ_vec)
-	print('angle to rotate: ',angle_to_rot)
 	# Calculate the rotation axis
 	var rotation_axis = current_vec.cross(targ_vec)
 	rotation_axis = rotation_axis.normalized()
-	
 	return [rotation_axis,angle_to_rot]
 
 func interpret_bone_chain(bone_idx_array): # Suitable for Rigify-style bone nomenclature
@@ -103,7 +94,6 @@ func interpret_bone_chain(bone_idx_array): # Suitable for Rigify-style bone nome
 		else: # all other bones can be transformed
 			mod_idx.append(bone_idx_array[i])
 			bone_lengths.append((get_bone_global_rest(bone_idx_array[i]).origin-get_bone_global_rest(bone_idx_array[i+1]).origin).length())
-	#mod_idx.append(bone_idx_array[-1]) # keep the last 
 	var total_length = 0
 	for each in bone_lengths:
 		total_length = total_length + each
@@ -121,14 +111,14 @@ func backward_pass(bone_positions,bone_lengths,target_position): # This function
 	# also assumes that target already determined to be within reach
 	bone_positions.reverse() # flip the array for backwards pass
 	var new_bone_positions = []
-	# for last bone (first in array), calculate position as -(direction to target).normalized()+target
+	# for last bone (first in array), calculate position as -bone_length*(direction to target).normalized()+target
 	# for second in array, last bone's new position is target, repeat
 	var current_target = target_position
 	var dummy_vector = Vector3.ZERO
 	var new_bone_pos = Vector3.ZERO
 	for i in range(len(bone_positions)): # Note this adjusts all bones
 		dummy_vector = current_target - bone_positions[i]
-		new_bone_pos = -dummy_vector.normalized()+current_target
+		new_bone_pos = -bone_lengths[i]*dummy_vector.normalized()+current_target
 		new_bone_positions.append(new_bone_pos)
 		current_target = new_bone_pos
 	new_bone_positions.reverse() # Return seequence to original order
@@ -137,15 +127,15 @@ func backward_pass(bone_positions,bone_lengths,target_position): # This function
 func forward_pass(bone_positions,bone_lengths,target_position,first_bone_pos):
 	bone_positions[0] = first_bone_pos # this is constrained!
 	var new_bone_positions = [first_bone_pos]
-	# for first bone, calculate position as (direction to next bone position).normalized()+bone[0]
-	# for second in array, last bone's new position is target, repeat
-	var current_target = target_position
+	# for first bone, calculate target position as bone_length*(direction to next bone position).normalized()+bone[0]
+	# for second in array, third bone's new position is target, repeat
+	var current_target = bone_positions[1]
 	var dummy_vector = Vector3.ZERO
 	var new_bone_pos = Vector3.ZERO
 	for i in range(1,len(bone_positions)): # Here we respect the constraint on the first bone
-		current_target = bone_positions[i-1]
-		dummy_vector = bone_positions[i] - current_target
-		new_bone_pos = dummy_vector.normalized()+current_target
+		current_target = bone_positions[i]
+		dummy_vector =  current_target-bone_positions[i-1]
+		new_bone_pos = bone_lengths[i-1]*dummy_vector.normalized()+current_target
 		new_bone_positions.append(new_bone_pos)
 		current_target = new_bone_pos
 	return new_bone_positions
@@ -167,34 +157,29 @@ func apply_transforms(bone_idx_array,bone_positions,terminal_bone_idx,global_tar
 		global_positions.append(to_global(each))
 	for i in range(len(bone_idx_array)-2):
 		# for each bone in in the array, point it at the location specified for its child
-		print(get_bone_name(bone_idx_array[i]),', ',get_bone_name(bone_idx_array[i+1]))
+		#print(get_bone_name(bone_idx_array[i]),', ',get_bone_name(bone_idx_array[i+1]))
 		point_bone_at_global_target(bone_idx_array[i],bone_idx_array[i+1],global_positions[i+1])#global_positions[i+1])
 	# point the hand or last bone at the actual target itself!
 	point_bone_at_global_target(bone_idx_array[-2],bone_idx_array[-1],global_target_position)
 
 
-func FABRIK(bone_idx_array,target_node,threshold=0.1,max_passes = 15):
-	clear_bones_global_pose_override()
-	# Get the target node position in the skeleton frame
-	#var target_position = (global_transform.affine_inverse()*target_node.global_transform).origin
+func FABRIK(bone_idx_array,target_node,threshold=0.1,max_passes = 10,clear_override=false):
+	if clear_override:
+		clear_bones_global_pose_override()
+	# a better version of this won't depend on the previous line - should change to take existing
+	# pose transforms and modify from those, or figure out some other means that allows interpolation
 	var target_position = to_local(target_node.global_transform.origin)
 	var modIdx_lengths_totalLength = interpret_bone_chain(bone_idx_array)
-	print(modIdx_lengths_totalLength)
 	var mod_idx_array = modIdx_lengths_totalLength[0] # the bones to be moved
-	#for each in mod_idx_array:
-		#print(get_bone_name(each))
 	var bone_lengths = modIdx_lengths_totalLength[1] # the interpreted lengths
 	var total_length = modIdx_lengths_totalLength[2] # the total length of the limb
 	var current_bone_positions = get_bone_array_global_positions(mod_idx_array) # in skeleton frame
-	print('current: ',current_bone_positions)
 	var new_bone_positions = current_bone_positions.duplicate(true) # for starters!
 	var first_bone_position = get_bone_global_pose(mod_idx_array[0]).origin
 	if total_length < (target_position - current_bone_positions[0]).length():
-		print('out of reach!')
 		# new_bone_positions are always in skeleton frame 
 		new_bone_positions = get_positions_to_aim_chain_at_global_target(current_bone_positions,bone_lengths,to_global(target_position))
 	else: # execute FABRIK if final bone in chain not closer than threshold
-		print('FABRIK TIME!')
 		var passes = 0
 		while (new_bone_positions[-1] - target_position).length() > threshold and passes < max_passes:
 			new_bone_positions = backward_pass(new_bone_positions,bone_lengths,target_position)
@@ -208,7 +193,4 @@ func FABRIK(bone_idx_array,target_node,threshold=0.1,max_passes = 15):
 		print('new: ',new_bone_positions)
 							#bone_idx_array,bone_positions,terminal_bone_idx,global_target_position
 		apply_transforms(mod_idx_array,new_bone_positions,bone_idx_array[-1],target_node.global_transform.origin)
-	
-	# DIRECTION is target - current bone position
-	# NEW position is -DIRECTION.normalized() * current bone length + target
 	
