@@ -1,5 +1,5 @@
 # we_have_FABRIK_at_home
-This is a simple implementation of FABRIK (Forward And Backward Reaching Inverse Kinematics).  
+This is a simple implementation of FABRIK (Forward And Backward Reaching Inverse Kinematics) to use before IK is reintroduced to Godot 4.
 
 Absolutely nothing has been optimized, but it does work so far as I can tell - let me know if you find unexpected behavior.
 
