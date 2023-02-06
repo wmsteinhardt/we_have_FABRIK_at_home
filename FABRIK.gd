@@ -15,6 +15,7 @@ var counter = 0
 var set = false
 # Called when the node enters the scene tree for the first time.
 @onready var target = get_owner().get_node('Target')
+@onready var BAs = [$BA0,$BA1,$BA2,$BA3,$BA4,$BA5,$BA6]
 
 # Bone/Skeleton notes
 # to_global(get_bone_global_pose(bone index)) will yield the actual global transform of the bone.
@@ -50,21 +51,22 @@ func _physics_process(delta):
 		FABRIK(right_arm_indices,get_tree().get_current_scene().get_node('Target'))
 	if Input.is_action_just_released("ui_home"):
 		clear_bones_global_pose_override()
-		
-func point_bone_at_global_target(bone_index,child_index,global_target):
+
+	
+func point_bone_at_local_target(bone_index,child_index,local_target):
 	var t = get_bone_global_pose(bone_index)
-	var axis_and_rot = get_axis_and_angle_to_point_bone_at_global_target(bone_index,child_index,global_target)
+	var axis_and_rot = get_axis_and_angle_to_point_bone_at_local_target(bone_index,child_index,local_target)
 	t.basis = t.basis.rotated(axis_and_rot[0],axis_and_rot[1]) 
 	if axis_and_rot[1] > 0.01:
 		set_bone_global_pose_override(bone_index,t,1.0,true)
 	else:
 		print('Rotation angle was only ',axis_and_rot[1])
-	
-func get_axis_and_angle_to_point_bone_at_global_target(bone_index,child_index,global_target):
+
+func get_axis_and_angle_to_point_bone_at_local_target(bone_index,child_index,local_target):
 	# Vector describing current direction of the bone
-	var current_vec = to_global(get_bone_global_pose(child_index).origin)-to_global(get_bone_global_pose(bone_index).origin)
+	var current_vec = get_bone_global_pose(child_index).origin-get_bone_global_pose(bone_index).origin
 	# Vector pointing from bone to the target position
-	var targ_vec = (global_target - to_global(get_bone_global_pose(bone_index).origin))
+	var targ_vec = (local_target - get_bone_global_pose(bone_index).origin)
 	# Normalize both vectors
 	targ_vec = targ_vec.normalized()
 	current_vec = current_vec.normalized()
@@ -149,20 +151,18 @@ func get_positions_to_aim_chain_at_global_target(bone_positions,bone_lengths,tar
 	
 	return new_bone_positions
 
-func apply_transforms(bone_idx_array,bone_positions,terminal_bone_idx,global_target_position):
-	var global_positions = []
+func apply_transforms_in_local(bone_idx_array,bone_positions,terminal_bone_idx,local_target_position):
 	bone_idx_array.append(terminal_bone_idx) # this guarantees that the last bone identified in the chain is also pointed.
-	for each in bone_positions: # for each of the bone positions, formerly in the skeleton frame, get global position
-		global_positions.append(to_global(each))
+	#for each in bone_positions: # for each of the bone positions, formerly in the skeleton frame, get global position
+	#	global_positions.append(to_global(each))
 	for i in range(len(bone_idx_array)-2):
 		# for each bone in in the array, point it at the location specified for its child
 		#print(get_bone_name(bone_idx_array[i]),', ',get_bone_name(bone_idx_array[i+1]))
-		point_bone_at_global_target(bone_idx_array[i],bone_idx_array[i+1],global_positions[i+1])#global_positions[i+1])
+		point_bone_at_local_target(bone_idx_array[i],bone_idx_array[i+1],bone_positions[i+1])#global_positions[i+1])
 	# point the hand or last bone at the actual target itself!
-	point_bone_at_global_target(bone_idx_array[-2],bone_idx_array[-1],global_target_position)
-
-
-func FABRIK(bone_idx_array,target_node,threshold=0.01,max_passes = 10,clear_override=false):
+	point_bone_at_local_target(bone_idx_array[-2],bone_idx_array[-1],local_target_position)
+	
+func FABRIK(bone_idx_array,target_node,threshold=0.1,max_passes = 10,clear_override=false):
 	if clear_override:
 		clear_bones_global_pose_override()
 	# a better version of this won't depend on the previous line - should change to take existing
@@ -191,5 +191,5 @@ func FABRIK(bone_idx_array,target_node,threshold=0.01,max_passes = 10,clear_over
 	if not already_set:
 		print('new: ',new_bone_positions)
 							#bone_idx_array,bone_positions,terminal_bone_idx,global_target_position
-		apply_transforms(mod_idx_array,new_bone_positions,bone_idx_array[-1],target_node.global_transform.origin)
+		apply_transforms_in_local(mod_idx_array,new_bone_positions,bone_idx_array[-1],to_local(target_node.global_transform.origin))
 	
